@@ -58,11 +58,12 @@ def genera_file(prompt):
     global contenuto_cache
     desktop_path = os.path.expanduser("~/Desktop")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    nome_file_rtf = f"chat_session_{timestamp}.rtf"
+    # nome_file_rtf = f"chat_session_{timestamp}.rtf"
+    nome_file_rtf = f"chat_session.rtf"
     percorso_file_rtf = os.path.join(desktop_path, nome_file_rtf)
 
     nuova_risposta = genera_risposta(prompt)
-    contenuto_cache = contenuto_cache + nuova_risposta
+    contenuto_cache = contenuto_cache + "\n\n" + nuova_risposta
     
     chiudi_textedit()
 
