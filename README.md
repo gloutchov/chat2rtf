@@ -16,3 +16,7 @@ Il file è editabile, ma anche salvando le modifiche, queste non rimangono se si
 Gestisce gli hyperlink.
 Gestisce le immagini, se la risposta al prompt le mostra.
 Può fare ricerche online.
+
+##LLM USATA
+
+L'App è impostata per usare gpt4o-mini_search... Ma ovviamente può essere impiegato un qualunque modello.
