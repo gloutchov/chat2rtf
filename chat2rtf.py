@@ -1,19 +1,16 @@
 from openai import OpenAI
-import subprocess
 import os
+import subprocess
+import time
 from datetime import datetime
-import re
-import requests
-import tempfile
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
-from tkinter import TclError
-from tkinter.ttk import Style
-
-# 🔐 API key
+import pypandoc
+   
 client = OpenAI(api_key="YOUR API KEY")
-
+contenuto_cache = ""
+    
 # === FUNZIONI APPLE SCRIPT ===
 def chiudi_textedit():
     script = '''
@@ -43,17 +40,12 @@ def ricarica_textedit(percorso_file):
         activate
     end tell
     '''
-    subprocess.run(["osascript", "-e", script])
+    try:
+        subprocess.run(["osascript", "-e", script])
+    except Exception as e:
+        messagebox.showerror("Errore", f"Errore nel riavvio di TextEdit:\n{str(e)}")
 
 # === FUNZIONI RTF ===
-def linkify(text):
-    """Format links as RTF hyperlinks."""
-    return re.sub(
-        r'(https?://\S+)',
-        lambda match: r'\ul\cf1 ' + match.group(1) + r'\cf0\ulnone',
-        text
-    )
-
 def genera_risposta(prompt):
     """Genera una risposta da ChatGPT basata sul prompt fornito."""
     response = client.chat.completions.create(
@@ -63,80 +55,49 @@ def genera_risposta(prompt):
     return response.choices[0].message.content
 
 def genera_file(prompt):
-    """Genera un file RTF con il contenuto fornito."""
-    chiudi_textedit()
-    contenuto_testo = genera_risposta(prompt)
-
-    testo_rtf = contenuto_testo  # Scrittura diretta e sicura in RTF
-    testo_rtf_linked = linkify(testo_rtf)
-    contenuto_testo = contenuto_testo.replace("{", "\\{").replace("}", "\\}").replace("\\", "\\\\")
-
-    # 📁 Trova il file RTF sul desktop
+    global contenuto_cache
     desktop_path = os.path.expanduser("~/Desktop")
-    nome_file = "chat_session.rtf"
-    percorso_file = os.path.join(desktop_path, nome_file)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    nome_file_rtf = f"chat_session_{timestamp}.rtf"
+    percorso_file_rtf = os.path.join(desktop_path, nome_file_rtf)
 
-    if os.path.exists(percorso_file):
-        with open(percorso_file, "r", encoding="windows-1252") as f:
-            contenuto_finale = f.read()
-        if not contenuto_finale.endswith("}"):
-            contenuto_finale += "}"
-        contenuto_finale = contenuto_finale.rstrip("}\n")
-    else:
-        contenuto_finale = (
-            r"{\rtf1\ansi\deff0"
-            r"{\fonttbl\f0\fswiss Helvetica;}"
-            r"\fs28"  # font size 14pt
-            r"\pard\n"
-        )
-
-    contenuto_finale += (
-        r"\par\pard\sa200\sl276\slmult1" +
-        testo_rtf_linked + r"\par\n" +
-        "\n".join([scarica_e_converti_img(url) for url in re.findall(r'(https?://\S+\.(?:jpg|jpeg|png|gif|webp))', contenuto_testo, re.IGNORECASE)]) +
-        r"\par\n\line\line"
-        "}"
-    )
+    nuova_risposta = genera_risposta(prompt)
+    contenuto_cache = contenuto_cache + nuova_risposta
     
-    # 💾 Salva file su Desktop
-    with open(percorso_file, "w", encoding="windows-1252") as file:
-        file.write(contenuto_finale)
+    chiudi_textedit()
 
-    import time
-    time.sleep(0.5)
-    ricarica_textedit(percorso_file)
-
-# 🔽 Scarica e converte immagini in RTF
-def scarica_e_converti_img(url):
-    """Scarica un'immagine e la converte in formato RTF."""
     try:
-        resp = requests.get(url)
-        resp.raise_for_status()
-        ext = url.split('.')[-1].lower()
-        rtf_type = {"jpg": "jpegblip", "jpeg": "jpegblip", "png": "pngblip", "gif": "pngblip", "webp": "pngblip"}.get(ext, "jpegblip")
-        hexdata = resp.content.hex()
-        rtf_data = (
-            r"{\pard\qc{\pict\\" + rtf_type + "\n"
-            + "\n".join([hexdata[i:i+128] for i in range(0, len(hexdata), 128)])
-            + "\n}}\n"
+        contenuto_rtf = pypandoc.convert_text(
+            contenuto_cache,
+            to="rtf",
+            format="markdown",
+            extra_args=["--standalone"]
         )
-        return rtf_data
+    except RuntimeError as e:
+        messagebox.showerror("Errore", f"Errore nella conversione in RTF:\n{str(e)}")
+        return
+
+    try:
+        with open(percorso_file_rtf, "wb") as f:
+            f.write(contenuto_rtf.encode("latin1"))
     except Exception as e:
-        print(f"Errore con immagine {url}: {e}")
-        return r"{\i link immagine non funzionante}"
+        messagebox.showerror("Errore", f"Errore nel salvataggio del file RTF:\n{str(e)}")
+        return
+    
+    time.sleep(0.5)
+    ricarica_textedit(percorso_file_rtf)
 
 # === INTERFACCIA GRAFICA (GUI) ===
 root = tk.Tk()
-root.title("ChatGPT → RTF con immagini")
+root.title("Chat2rtf")
 
-# Usa il tema di sistema per adattarsi automaticamente a dark/light mode
-style = Style()
+style = ttk.Style()
 try:
     style.theme_use(style.theme_use())
-except TclError:
+except Exception:
     pass
 
-tk.Label(root, text="Scrivi il prompt:").pack(padx=10, pady=5)
+tk.Label(root, text="Domanda:").pack(padx=10, pady=5)
 
 prompt_history = []
 entry_var = tk.StringVar()
@@ -152,9 +113,19 @@ def on_generate():
         genera_file(prompt)
         entry.delete(0, tk.END)
     else:
-        messagebox.showwarning("Attenzione", "Inserisci un prompt!")
+        messagebox.showwarning("Attenzione", "Inserisci una domanda!")
 
-tk.Button(root, text="Genera file RTF", command=on_generate).pack(pady=10)
+def azzera_cache():
+    global contenuto_cache
+    contenuto_cache = ""
+    messagebox.showinfo("Cache azzerata", "La cache delle risposte è stata svuotata.")
+
+button_frame = tk.Frame(root)
+button_frame.pack(fill=tk.X, padx=10, pady=10)
+
+tk.Button(button_frame, text="Azzera Cache", command=azzera_cache).pack(side=tk.LEFT)
+tk.Button(button_frame, text="Risposta", command=on_generate).pack(side=tk.RIGHT)
+
 entry.bind("<Return>", lambda event: on_generate())
 
 root.mainloop()
